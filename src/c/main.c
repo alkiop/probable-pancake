@@ -426,7 +426,8 @@ static void init(void) {
   window_stack_push(s_main_window, true);
 
   app_message_register_inbox_received(inbox_received_callback);
-  app_message_open(256, 32);
+  // Inbox must hold the station bundle + embedded map payload (~230B worst case).
+  app_message_open(512, 32);
 
   send_key(KEY_USE_NEAREST);
 }
