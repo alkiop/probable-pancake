@@ -25,7 +25,9 @@
         "RequestPrev": 10006,
         "StationIndex": 10007,
         "StationCount": 10008,
-        "WarningMsg": 10009
+        "WarningMsg": 10009,
+        "MapData": 10010,
+        "WeatherAlert": 10011
     },
     "resources": {
         "media": []
@@ -43,6 +45,8 @@
         "RequestPrev": 10006,
         "StationIndex": 10007,
         "StationCount": 10008,
-        "WarningMsg": 10009
+        "WarningMsg": 10009,
+        "MapData": 10010,
+        "WeatherAlert": 10011
     }
 }
