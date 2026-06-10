@@ -10,72 +10,95 @@
 #define KEY_STATION_COUNT 10008
 #define KEY_WARNING_MSG   10009
 
-#if defined(PBL_COLOR)
-#define CITIBIKE_BLUE GColorFromRGB(0, 85, 170)
-#define CREAM_BG      GColorFromRGB(255, 255, 170)
-#else
-#define CITIBIKE_BLUE GColorBlack
-#define CREAM_BG      GColorWhite
-#endif
-
 static Window *s_main_window;
-static Layer *s_header_layer;
-static TextLayer *s_station_layer;
-static TextLayer *s_count_layer;
-static TextLayer *s_detail1_layer;
-static TextLayer *s_detail2_layer;
-static TextLayer *s_warning_layer;
-static TextLayer *s_nav_layer;
-static TextLayer *s_hint_layer;
+static TextLayer *s_index_layer;    // "1/4" top-left
+static TextLayer *s_mode_layer;     // "BIKES" / "DOCKS" small grey caps
+static TextLayer *s_station_layer;  // station name, bold white
+static Layer     *s_circle_layer;   // color-coded circle + big count
+static TextLayer *s_detail_layer;   // "eBike 6   Std 18" breakdown
+static TextLayer *s_footer_layer;   // hint / warning
 
 static char s_station_name[48];
-static char s_count_text[20];
-static char s_detail1_text[24];
-static char s_detail2_text[24];
-static char s_warning_text[48];
-static char s_nav_text[16];
+static char s_index_text[12];
+static char s_detail_text[32];
+static char s_footer_text[48];
 
 static int s_bikes = 0;
 static int s_ebikes = 0;
 static int s_docks = 0;
 static bool s_show_docks = false;
 static bool s_have_data = false;
+static bool s_has_warning = false;
 
-static GColor availability_color(int n) {
+// Availability color rules: 0 = red, <3 = yellow, >=3 = green.
+// On B&W watches the circle is solid white with a black number.
+static void circle_colors(int n, GColor *fill, GColor *txt) {
 #if defined(PBL_COLOR)
-  if (n == 0) return GColorRed;
-  if (n < 3) return GColorChromeYellow;
-  return GColorIslamicGreen;
+  if (n == 0)       { *fill = GColorRed;          *txt = GColorWhite; }
+  else if (n < 3)   { *fill = GColorChromeYellow; *txt = GColorBlack; }
+  else              { *fill = GColorIslamicGreen; *txt = GColorWhite; }
 #else
-  (void)n;
-  return GColorBlack;
+  *fill = GColorWhite;
+  *txt = GColorBlack;
 #endif
+}
+
+static void circle_update_proc(Layer *layer, GContext *ctx) {
+  if (!s_have_data) return;
+
+  GRect bounds = layer_get_bounds(layer);
+  GPoint center = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+  int radius = (bounds.size.h / 2) - 2;
+
+  int value = s_show_docks ? s_docks : s_bikes;
+  GColor fill, txt;
+  circle_colors(value, &fill, &txt);
+
+  graphics_context_set_fill_color(ctx, fill);
+  graphics_fill_circle(ctx, center, radius);
+
+  static char numbuf[8];
+  snprintf(numbuf, sizeof(numbuf), "%d", value);
+
+  GFont font = fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
+  GSize ts = graphics_text_layout_get_content_size(
+      numbuf, font, bounds, GTextOverflowModeFill, GTextAlignmentCenter);
+  // Pebble text frames have top-side padding; nudge up to optically center.
+  GRect text_rect = GRect(0, center.y - (ts.h / 2) - 4, bounds.size.w, ts.h + 8);
+
+  graphics_context_set_text_color(ctx, txt);
+  graphics_draw_text(ctx, numbuf, font, text_rect,
+                     GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }
 
 static void update_view(void) {
   if (!s_have_data) return;
 
   if (s_show_docks) {
-    snprintf(s_count_text, sizeof(s_count_text), "Docks: %d", s_docks);
-    text_layer_set_text_color(s_count_layer, availability_color(s_docks));
-    text_layer_set_text(s_detail1_layer, "open parking spots");
-    text_layer_set_text(s_detail2_layer, "");
+    text_layer_set_text(s_mode_layer, "DOCKS");
+    snprintf(s_detail_text, sizeof(s_detail_text), "%d bikes here", s_bikes);
   } else {
-    snprintf(s_count_text, sizeof(s_count_text), "Bikes: %d", s_bikes);
-    text_layer_set_text_color(s_count_layer, availability_color(s_bikes));
-    snprintf(s_detail1_text, sizeof(s_detail1_text), "eBikes: %d", s_ebikes);
-    snprintf(s_detail2_text, sizeof(s_detail2_text), "Regular: %d", s_bikes - s_ebikes);
-    text_layer_set_text(s_detail1_layer, s_detail1_text);
-    text_layer_set_text(s_detail2_layer, s_detail2_text);
+    text_layer_set_text(s_mode_layer, "BIKES");
+    snprintf(s_detail_text, sizeof(s_detail_text), "eBike %d   Std %d",
+             s_ebikes, s_bikes - s_ebikes);
   }
-  text_layer_set_text(s_count_layer, s_count_text);
+  text_layer_set_text(s_detail_layer, s_detail_text);
+
+  if (!s_has_warning) {
+    text_layer_set_text(s_footer_layer,
+                        s_show_docks ? "SELECT: bikes" : "SELECT: docks");
+  }
+
+  layer_mark_dirty(s_circle_layer);
 }
 
 static void show_error(const char *msg) {
-  text_layer_set_text(s_station_layer, "Citi Bike");
-  text_layer_set_text(s_count_layer, "");
-  text_layer_set_text(s_detail1_layer, msg);
-  text_layer_set_text(s_detail2_layer, "");
+  s_have_data = false;
+  layer_mark_dirty(s_circle_layer);
+  text_layer_set_text(s_mode_layer, "");
+  text_layer_set_text(s_station_layer, msg);
+  text_layer_set_text(s_detail_layer, "");
+  text_layer_set_text(s_footer_layer, "");
 }
 
 static void inbox_received_callback(DictionaryIterator *iter, void *context) {
@@ -123,18 +146,21 @@ static void inbox_received_callback(DictionaryIterator *iter, void *context) {
   Tuple *index_t = dict_find(iter, KEY_STATION_INDEX);
   Tuple *count_t = dict_find(iter, KEY_STATION_COUNT);
   if (index_t && count_t) {
-    snprintf(s_nav_text, sizeof(s_nav_text), "%d of %d",
+    snprintf(s_index_text, sizeof(s_index_text), "%d/%d",
              (int)index_t->value->int32, (int)count_t->value->int32);
-    text_layer_set_text(s_nav_layer, s_nav_text);
+    text_layer_set_text(s_index_layer, s_index_text);
   }
 
   Tuple *warning_t = dict_find(iter, KEY_WARNING_MSG);
   if (warning_t && warning_t->type == TUPLE_CSTRING && warning_t->value->cstring[0]) {
-    strncpy(s_warning_text, warning_t->value->cstring, sizeof(s_warning_text) - 1);
-    s_warning_text[sizeof(s_warning_text) - 1] = '\0';
-    text_layer_set_text(s_warning_layer, s_warning_text);
+    strncpy(s_footer_text, warning_t->value->cstring, sizeof(s_footer_text) - 1);
+    s_footer_text[sizeof(s_footer_text) - 1] = '\0';
+    s_has_warning = true;
+    text_layer_set_text(s_footer_layer, s_footer_text);
   } else if (bundle_t) {
-    text_layer_set_text(s_warning_layer, "");
+    s_has_warning = false;
+    text_layer_set_text(s_footer_layer,
+                        s_show_docks ? "SELECT: bikes" : "SELECT: docks");
   }
 }
 
@@ -164,12 +190,6 @@ static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
 
-static void header_update_proc(Layer *layer, GContext *ctx) {
-  GRect bounds = layer_get_bounds(layer);
-  graphics_context_set_fill_color(ctx, CITIBIKE_BLUE);
-  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
-}
-
 static TextLayer *make_text_layer(Layer *parent, GRect frame, const char *font_key,
                                   GColor color, GTextAlignment align) {
   TextLayer *tl = text_layer_create(frame);
@@ -184,53 +204,50 @@ static TextLayer *make_text_layer(Layer *parent, GRect frame, const char *font_k
 static void window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
-  window_set_background_color(window, CREAM_BG);
+  int w = bounds.size.w;
 
-  // Blue header bar with white station name
-  s_header_layer = layer_create(GRect(0, 0, bounds.size.w, 32));
-  layer_set_update_proc(s_header_layer, header_update_proc);
-  layer_add_child(window_layer, s_header_layer);
+  window_set_background_color(window, GColorBlack);
 
-  s_station_layer = make_text_layer(window_layer, GRect(2, 3, bounds.size.w - 4, 28),
-                                    FONT_KEY_GOTHIC_18_BOLD, GColorWhite, GTextAlignmentCenter);
+  GColor grey = PBL_IF_COLOR_ELSE(GColorLightGray, GColorWhite);
+
+  // Top-left index "1/4"
+  s_index_layer = make_text_layer(window_layer, GRect(4, 2, 44, 16),
+                                  FONT_KEY_GOTHIC_14, grey, GTextAlignmentLeft);
+
+  // Mode caps label "BIKES" / "DOCKS" (like the transit "UPTOWN")
+  s_mode_layer = make_text_layer(window_layer, GRect(2, 2, w - 4, 16),
+                                 FONT_KEY_GOTHIC_14, grey, GTextAlignmentCenter);
+
+  // Station name (white, bold, centered, up to two lines)
+  s_station_layer = make_text_layer(window_layer, GRect(2, 18, w - 4, 44),
+                                    FONT_KEY_GOTHIC_18_BOLD, GColorWhite,
+                                    GTextAlignmentCenter);
   text_layer_set_overflow_mode(s_station_layer, GTextOverflowModeTrailingEllipsis);
 
-  s_count_layer = make_text_layer(window_layer, GRect(5, 36, bounds.size.w - 10, 30),
-                                  FONT_KEY_GOTHIC_24_BOLD, CITIBIKE_BLUE, GTextAlignmentLeft);
+  // Color-coded circle with big count
+  s_circle_layer = layer_create(GRect(0, 62, w, 64));
+  layer_set_update_proc(s_circle_layer, circle_update_proc);
+  layer_add_child(window_layer, s_circle_layer);
 
-  s_detail1_layer = make_text_layer(window_layer, GRect(5, 70, bounds.size.w - 10, 22),
-                                    FONT_KEY_GOTHIC_18, GColorBlack, GTextAlignmentLeft);
+  // Breakdown line (eBike / std, or bikes-here in docks view)
+  s_detail_layer = make_text_layer(window_layer, GRect(2, 128, w - 4, 22),
+                                   FONT_KEY_GOTHIC_18, GColorWhite,
+                                   GTextAlignmentCenter);
 
-  s_detail2_layer = make_text_layer(window_layer, GRect(5, 92, bounds.size.w - 10, 22),
-                                    FONT_KEY_GOTHIC_18, GColorBlack, GTextAlignmentLeft);
+  // Footer hint / warning
+  s_footer_layer = make_text_layer(window_layer, GRect(2, bounds.size.h - 18, w - 4, 16),
+                                   FONT_KEY_GOTHIC_14, grey, GTextAlignmentCenter);
 
-  s_warning_layer = make_text_layer(window_layer, GRect(5, 116, bounds.size.w - 10, 18),
-                                    FONT_KEY_GOTHIC_14,
-                                    PBL_IF_COLOR_ELSE(GColorRed, GColorBlack),
-                                    GTextAlignmentLeft);
-
-  s_nav_layer = make_text_layer(window_layer, GRect(5, 136, bounds.size.w - 10, 22),
-                                FONT_KEY_GOTHIC_18_BOLD, CITIBIKE_BLUE, GTextAlignmentCenter);
-
-  s_hint_layer = make_text_layer(window_layer, GRect(5, bounds.size.h - 16, bounds.size.w - 10, 14),
-                                 FONT_KEY_GOTHIC_14,
-                                 PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack),
-                                 GTextAlignmentCenter);
-
-  text_layer_set_text(s_station_layer, "Citi Bike");
-  text_layer_set_text(s_count_layer, "Locating...");
-  text_layer_set_text(s_hint_layer, "UP/DN: stations  SEL: docks");
+  text_layer_set_text(s_station_layer, "Locating...");
 }
 
 static void window_unload(Window *window) {
+  text_layer_destroy(s_index_layer);
+  text_layer_destroy(s_mode_layer);
   text_layer_destroy(s_station_layer);
-  text_layer_destroy(s_count_layer);
-  text_layer_destroy(s_detail1_layer);
-  text_layer_destroy(s_detail2_layer);
-  text_layer_destroy(s_warning_layer);
-  text_layer_destroy(s_nav_layer);
-  text_layer_destroy(s_hint_layer);
-  layer_destroy(s_header_layer);
+  layer_destroy(s_circle_layer);
+  text_layer_destroy(s_detail_layer);
+  text_layer_destroy(s_footer_layer);
 }
 
 static void init(void) {
