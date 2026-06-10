@@ -1,0 +1,8 @@
+{
+    "name": "citibike-pebble",
+    "version": "1.0.0",
+    "description": "NYC Citi Bike availability for Pebble watch",
+    "scripts": {
+        "build": "pebble build"
+    }
+}

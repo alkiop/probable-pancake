@@ -1,0 +1,48 @@
+{
+    "displayName": "Citi Bike",
+    "uuid": "826a1e75-9c05-4e79-a3ce-645cff0e62ef",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+        "basalt",
+        "chalk",
+        "diorite",
+        "emery",
+        "flint",
+        "gabbro"
+    ],
+    "watchapp": {
+        "watchface": false
+    },
+    "capabilities": [
+        "location"
+    ],
+    "messageKeys": {
+        "UseNearest": 10001,
+        "Bundle": 10003,
+        "ErrorCode": 10004,
+        "RequestNext": 10005,
+        "RequestPrev": 10006,
+        "StationIndex": 10007,
+        "StationCount": 10008,
+        "WarningMsg": 10009
+    },
+    "resources": {
+        "media": []
+    },
+    "name": "citibike-pebble",
+    "shortName": "Citi Bike",
+    "longName": "Citi Bike",
+    "versionLabel": "1.0",
+    "companyName": "probable-pancake",
+    "appKeys": {
+        "UseNearest": 10001,
+        "Bundle": 10003,
+        "ErrorCode": 10004,
+        "RequestNext": 10005,
+        "RequestPrev": 10006,
+        "StationIndex": 10007,
+        "StationCount": 10008,
+        "WarningMsg": 10009
+    }
+}
