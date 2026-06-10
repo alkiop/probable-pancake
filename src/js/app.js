@@ -13,6 +13,7 @@ var nearbyList = [];        // [{station, distance}] sorted by distance asc
 var currentIndex = 0;
 var outOfRange = false;
 var pendingNearest = false;
+var userLat = null, userLon = null;
 
 function haversine(lat1, lon1, lat2, lon2) {
     var R = 6371000, toRad = Math.PI / 180;
@@ -111,11 +112,60 @@ function sendCurrentStation() {
     sendToWatch(msg);
 }
 
+// Sends nearby stations as offsets (metres) from the user for the map view.
+// Format: "dlat,dlon,color;..." color: 0 red, 1 yellow, 2 green, 3 = selected
+function sendMapData() {
+    if (userLat === null || nearbyList.length === 0) return;
+    var cosLat = Math.cos(userLat * Math.PI / 180);
+    var parts = [];
+    var limit = Math.min(nearbyList.length, 8);
+    for (var i = 0; i < limit; i++) {
+        var s = nearbyList[i].station;
+        var dlat = Math.round((s.lat - userLat) * 111111);
+        var dlon = Math.round((s.lon - userLon) * 111111 * cosLat);
+        var st = STATION_STATUS ? STATION_STATUS[s.id] : null;
+        var bikes = st ? (st.num_bikes_available || 0) : 0;
+        var c = (i === currentIndex) ? 3 : (bikes === 0 ? 0 : (bikes < 5 ? 1 : 2));
+        parts.push(dlat + ',' + dlon + ',' + c);
+    }
+    sendToWatch({ MapData: parts.join(';') });
+}
+
+// Maps an Open-Meteo WMO weather code + temperature to a short alert banner.
+// Empty string means "no adverse conditions".
+function weatherAlert(code, tempC) {
+    if (code >= 95) return '! Storm';
+    if (code >= 85) return '! Snow Showers';
+    if (code >= 80) return '! Rain Showers';
+    if (code >= 71 && code <= 77) return '! Snow';
+    if (code >= 61 && code <= 67) return '! Rain';
+    if (code >= 51 && code <= 57) return '! Drizzle';
+    if (code >= 45 && code <= 48) return '! Fog';
+    if (tempC > 35) return '! Heat Advisory';
+    if (tempC < -10) return '! Cold Alert';
+    return '';
+}
+
+function fetchWeather(lat, lon) {
+    var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat +
+        '&longitude=' + lon + '&current_weather=true';
+    fetchJSON(url, function(err, data) {
+        if (err || !data || !data.current_weather) return;
+        var cw = data.current_weather;
+        var alert = weatherAlert(cw.weathercode, cw.temperature);
+        sendToWatch({ WeatherAlert: alert });
+    });
+}
+
 function locateAndSend() {
     navigator.geolocation.getCurrentPosition(
         function(pos) {
-            buildNearbyList(pos.coords.latitude, pos.coords.longitude);
+            userLat = pos.coords.latitude;
+            userLon = pos.coords.longitude;
+            buildNearbyList(userLat, userLon);
             sendCurrentStation();
+            sendMapData();
+            fetchWeather(userLat, userLon);
         },
         function(err) {
             console.log('[citibike] geolocation failed: ' + (err && err.message));
@@ -186,9 +236,11 @@ Pebble.addEventListener('appmessage', function(e) {
         if (!dataReady || nearbyList.length === 0) return;
         currentIndex = (currentIndex + 1) % nearbyList.length;
         sendCurrentStation();
+        sendMapData();
     } else if (msg.RequestPrev) {
         if (!dataReady || nearbyList.length === 0) return;
         currentIndex = (currentIndex - 1 + nearbyList.length) % nearbyList.length;
         sendCurrentStation();
+        sendMapData();
     }
 });
