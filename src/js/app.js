@@ -100,7 +100,8 @@ function sendCurrentStation() {
         StationIndex: currentIndex + 1,
         StationCount: nearbyList.length,
         ErrorCode: 0,
-        WarningMsg: ''
+        WarningMsg: '',
+        MapData: buildMapData()
     };
 
     if (outOfRange) {
@@ -112,10 +113,12 @@ function sendCurrentStation() {
     sendToWatch(msg);
 }
 
-// Sends nearby stations as offsets (metres) from the user for the map view.
-// Format: "dlat,dlon,color;..." color: 0 red, 1 yellow, 2 green, 3 = selected
-function sendMapData() {
-    if (userLat === null || nearbyList.length === 0) return;
+// Builds the map payload: nearby stations as metre offsets from the user.
+// Format: "dlat,dlon,color;..." color: 0 red, 1 yellow, 2 green, 3 = selected.
+// Returned as a string so it can ride inside the station message — AppMessage
+// only allows one in-flight message, so separate back-to-back sends get dropped.
+function buildMapData() {
+    if (userLat === null || nearbyList.length === 0) return '';
     var cosLat = Math.cos(userLat * Math.PI / 180);
     var parts = [];
     var limit = Math.min(nearbyList.length, 8);
@@ -128,7 +131,7 @@ function sendMapData() {
         var c = (i === currentIndex) ? 3 : (bikes === 0 ? 0 : (bikes < 5 ? 1 : 2));
         parts.push(dlat + ',' + dlon + ',' + c);
     }
-    sendToWatch({ MapData: parts.join(';') });
+    return parts.join(';');
 }
 
 // Maps an Open-Meteo WMO weather code + temperature to a short alert banner.
@@ -164,7 +167,6 @@ function locateAndSend() {
             userLon = pos.coords.longitude;
             buildNearbyList(userLat, userLon);
             sendCurrentStation();
-            sendMapData();
             fetchWeather(userLat, userLon);
         },
         function(err) {
@@ -236,11 +238,9 @@ Pebble.addEventListener('appmessage', function(e) {
         if (!dataReady || nearbyList.length === 0) return;
         currentIndex = (currentIndex + 1) % nearbyList.length;
         sendCurrentStation();
-        sendMapData();
     } else if (msg.RequestPrev) {
         if (!dataReady || nearbyList.length === 0) return;
         currentIndex = (currentIndex - 1 + nearbyList.length) % nearbyList.length;
         sendCurrentStation();
-        sendMapData();
     }
 });
