@@ -15,12 +15,16 @@ static TextLayer *s_index_layer;    // "1/4" top-left
 static TextLayer *s_mode_layer;     // "BIKES" / "DOCKS" small grey caps
 static TextLayer *s_station_layer;  // station name, bold white
 static Layer     *s_circle_layer;   // color-coded circle + big count
-static TextLayer *s_detail_layer;   // "eBike 6   Std 18" breakdown
+static TextLayer *s_detail_layer;   // docks view: "N bikes here"
+static TextLayer *s_ebike_layer;    // bikes view: "eBike N" in blue
+static TextLayer *s_std_layer;      // bikes view: "Std N" in white
 static TextLayer *s_footer_layer;   // hint / warning
 
 static char s_station_name[48];
 static char s_index_text[12];
 static char s_detail_text[32];
+static char s_ebike_text[16];
+static char s_std_text[16];
 static char s_footer_text[48];
 
 static int s_bikes = 0;
@@ -30,12 +34,12 @@ static bool s_show_docks = false;
 static bool s_have_data = false;
 static bool s_has_warning = false;
 
-// Availability color rules: 0 = red, <3 = yellow, >=3 = green.
+// Availability color rules: 0 = red, <5 = yellow, >=5 = green.
 // On B&W watches the circle is solid white with a black number.
 static void circle_colors(int n, GColor *fill, GColor *txt) {
 #if defined(PBL_COLOR)
   if (n == 0)       { *fill = GColorRed;          *txt = GColorWhite; }
-  else if (n < 3)   { *fill = GColorChromeYellow; *txt = GColorBlack; }
+  else if (n < 5)   { *fill = GColorChromeYellow; *txt = GColorBlack; }
   else              { *fill = GColorIslamicGreen; *txt = GColorWhite; }
 #else
   *fill = GColorWhite;
@@ -77,12 +81,17 @@ static void update_view(void) {
   if (s_show_docks) {
     text_layer_set_text(s_mode_layer, "DOCKS");
     snprintf(s_detail_text, sizeof(s_detail_text), "%d bikes here", s_bikes);
+    text_layer_set_text(s_detail_layer, s_detail_text);
+    text_layer_set_text(s_ebike_layer, "");
+    text_layer_set_text(s_std_layer, "");
   } else {
     text_layer_set_text(s_mode_layer, "BIKES");
-    snprintf(s_detail_text, sizeof(s_detail_text), "eBike %d   Std %d",
-             s_ebikes, s_bikes - s_ebikes);
+    text_layer_set_text(s_detail_layer, "");
+    snprintf(s_ebike_text, sizeof(s_ebike_text), "eBike %d", s_ebikes);
+    snprintf(s_std_text,   sizeof(s_std_text),   "Std %d",   s_bikes - s_ebikes);
+    text_layer_set_text(s_ebike_layer, s_ebike_text);
+    text_layer_set_text(s_std_layer,   s_std_text);
   }
-  text_layer_set_text(s_detail_layer, s_detail_text);
 
   if (!s_has_warning) {
     text_layer_set_text(s_footer_layer,
@@ -98,6 +107,8 @@ static void show_error(const char *msg) {
   text_layer_set_text(s_mode_layer, "");
   text_layer_set_text(s_station_layer, msg);
   text_layer_set_text(s_detail_layer, "");
+  text_layer_set_text(s_ebike_layer, "");
+  text_layer_set_text(s_std_layer, "");
   text_layer_set_text(s_footer_layer, "");
 }
 
@@ -214,7 +225,7 @@ static void window_load(Window *window) {
   s_index_layer = make_text_layer(window_layer, GRect(4, 2, 44, 16),
                                   FONT_KEY_GOTHIC_14, grey, GTextAlignmentLeft);
 
-  // Mode caps label "BIKES" / "DOCKS" (like the transit "UPTOWN")
+  // Mode caps label "BIKES" / "DOCKS"
   s_mode_layer = make_text_layer(window_layer, GRect(2, 2, w - 4, 16),
                                  FONT_KEY_GOTHIC_14, grey, GTextAlignmentCenter);
 
@@ -229,10 +240,21 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_circle_layer, circle_update_proc);
   layer_add_child(window_layer, s_circle_layer);
 
-  // Breakdown line (eBike / std, or bikes-here in docks view)
+  // Docks view: "N bikes here" (full width, centered)
   s_detail_layer = make_text_layer(window_layer, GRect(2, 128, w - 4, 22),
                                    FONT_KEY_GOTHIC_18, GColorWhite,
                                    GTextAlignmentCenter);
+
+  // Bikes view: "eBike N" in blue (right-aligned left half)
+  s_ebike_layer = make_text_layer(window_layer, GRect(2, 128, (w / 2) - 4, 22),
+                                  FONT_KEY_GOTHIC_18,
+                                  PBL_IF_COLOR_ELSE(GColorVividCerulean, GColorWhite),
+                                  GTextAlignmentRight);
+
+  // Bikes view: "Std N" in white (left-aligned right half)
+  s_std_layer = make_text_layer(window_layer, GRect(w / 2 + 2, 128, (w / 2) - 4, 22),
+                                FONT_KEY_GOTHIC_18, GColorWhite,
+                                GTextAlignmentLeft);
 
   // Footer hint / warning
   s_footer_layer = make_text_layer(window_layer, GRect(2, bounds.size.h - 18, w - 4, 16),
@@ -247,6 +269,8 @@ static void window_unload(Window *window) {
   text_layer_destroy(s_station_layer);
   layer_destroy(s_circle_layer);
   text_layer_destroy(s_detail_layer);
+  text_layer_destroy(s_ebike_layer);
+  text_layer_destroy(s_std_layer);
   text_layer_destroy(s_footer_layer);
 }
 
