@@ -101,7 +101,7 @@ static void circle_update_proc(Layer *layer, GContext *ctx) {
 
 // Plots nearby stations as dots around the user (centre = user position).
 static void map_update_proc(Layer *layer, GContext *ctx) {
-  if (s_view_mode != VIEW_MAP) return;
+  if (s_view_mode != VIEW_MAP || !s_have_data) return;
 
   GRect bounds = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorBlack);
@@ -189,12 +189,14 @@ static void update_view(void) {
     text_layer_set_text(s_footer_layer, hint);
   }
 
+  layer_set_hidden(s_map_layer, s_view_mode != VIEW_MAP);
   layer_mark_dirty(s_circle_layer);
   layer_mark_dirty(s_map_layer);
 }
 
 static void show_error(const char *msg) {
   s_have_data = false;
+  layer_set_hidden(s_map_layer, true);
   layer_mark_dirty(s_circle_layer);
   layer_mark_dirty(s_map_layer);
   text_layer_set_text(s_mode_layer, "");

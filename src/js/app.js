@@ -39,10 +39,28 @@ function fetchJSON(url, cb) {
     xhr.send();
 }
 
-function sendToWatch(msg) {
+// Serialised message queue: Pebble drops sendAppMessage calls made while a
+// previous one is in-flight.  Without this, road or weather data is silently
+// lost whenever two async fetches resolve close together.
+var _msgQueue = [];
+var _msgPending = false;
+
+function _drainQueue() {
+    if (_msgPending || _msgQueue.length === 0) return;
+    _msgPending = true;
+    var msg = _msgQueue.shift();
     Pebble.sendAppMessage(msg,
-        function() {},
-        function(e) { console.log('[citibike] send failed: ' + JSON.stringify(e)); });
+        function() { _msgPending = false; _drainQueue(); },
+        function(e) {
+            console.log('[citibike] send failed: ' + JSON.stringify(e));
+            _msgPending = false;
+            _drainQueue();
+        });
+}
+
+function sendToWatch(msg) {
+    _msgQueue.push(msg);
+    _drainQueue();
 }
 
 function sendError(code) {
@@ -118,7 +136,9 @@ function sendCurrentStation() {
 // Returned as a string so it can ride inside the station message — AppMessage
 // only allows one in-flight message, so separate back-to-back sends get dropped.
 function buildMapData() {
-    if (userLat === null || nearbyList.length === 0) return '';
+    // Out-of-range: the only station is far outside the 250m map radius; don't
+    // show a misleading dot clamped to the map edge.
+    if (userLat === null || nearbyList.length === 0 || outOfRange) return '';
     var cosLat = Math.cos(userLat * Math.PI / 180);
     var parts = [];
     var limit = Math.min(nearbyList.length, 8);
@@ -179,15 +199,20 @@ function fetchRoads(lat, lon) {
 
                 // Convert lat/lon to pixel coords in the map layer (144x88, centre=user).
                 // Same scale as station dots: half=44px covers RADIUS_METERS=250m.
-                var x1 = Math.round(72 + (p1.lon - lon) * 111111 * cosLat * 44 / 250);
-                var y1 = Math.round(44 - (p1.lat - lat) * 111111 * 44 / 250);
-                var x2 = Math.round(72 + (p2.lon - lon) * 111111 * cosLat * 44 / 250);
-                var y2 = Math.round(44 - (p2.lat - lat) * 111111 * 44 / 250);
+                var rx1 = Math.round(72 + (p1.lon - lon) * 111111 * cosLat * 44 / 250);
+                var ry1 = Math.round(44 - (p1.lat - lat) * 111111 * 44 / 250);
+                var rx2 = Math.round(72 + (p2.lon - lon) * 111111 * cosLat * 44 / 250);
+                var ry2 = Math.round(44 - (p2.lat - lat) * 111111 * 44 / 250);
 
-                x1 = Math.max(0, Math.min(143, x1));
-                y1 = Math.max(0, Math.min(87, y1));
-                x2 = Math.max(0, Math.min(143, x2));
-                y2 = Math.max(0, Math.min(87, y2));
+                // Both endpoints off the same edge → clamping would produce a
+                // false line hugging the map border; skip the segment entirely.
+                if ((rx1 < 0 && rx2 < 0) || (rx1 > 143 && rx2 > 143) ||
+                    (ry1 < 0 && ry2 < 0) || (ry1 > 87  && ry2 > 87)) continue;
+
+                var x1 = Math.max(0, Math.min(143, rx1));
+                var y1 = Math.max(0, Math.min(87,  ry1));
+                var x2 = Math.max(0, Math.min(143, rx2));
+                var y2 = Math.max(0, Math.min(87,  ry2));
 
                 if (x1 === x2 && y1 === y2) continue; // zero-length after clamp
                 segs.push(x1 + ',' + y1 + ',' + x2 + ',' + y2);
