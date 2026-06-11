@@ -13,25 +13,25 @@
 #define KEY_WEATHER_ALERT  10011
 #define KEY_ROAD_DATA      10012
 
-#define RADIUS_METERS     250
+#define RADIUS_METERS     150
 #define MAP_MAX_STATIONS  8
 #define MAP_MAX_ROAD_SEGS 80
 
-// Layout constants (portrait 144×168 Pebble Time)
-// Row 1  y=0..16   : index + mode
-// Row 2  y=16..60  : station name (~2 lines GOTHIC_18_BOLD)
-// Row 3  y=60..74  : weather banner
-// Gap    y=74..78  : 4 px black
-// Main   y=78..150 : LEFT=circle  RIGHT=eBike/Std (BIKES) or bike count (DOCKS)
-// Footer y=150..168: hint / warning
-#define ROW_STATION_Y   16
-#define ROW_STATION_H   44
-#define ROW_WEATHER_Y   60
-#define ROW_MAIN_Y      78
-#define ROW_FOOTER_Y    150
-#define LEFT_W          74    // circle column width
-#define RIGHT_X         76    // right column x-start
-#define RIGHT_W         66    // right column width
+// Layout constants (portrait 200×228 Pebble Time 2 / emery)
+// Row 1  y=0..22   : index + mode
+// Row 2  y=22..80  : station name (~2 lines GOTHIC_18_BOLD)
+// Row 3  y=80..98  : weather banner
+// Gap    y=98..100 : 2 px black
+// Main   y=100..204: LEFT=circle  RIGHT=eBike/Std (BIKES) or bike count (DOCKS)
+// Footer y=204..228: hint / warning
+#define ROW_STATION_Y   22
+#define ROW_STATION_H   58
+#define ROW_WEATHER_Y   80
+#define ROW_MAIN_Y      100
+#define ROW_FOOTER_Y    204
+#define LEFT_W          102   // circle column width
+#define RIGHT_X         104   // right column x-start
+#define RIGHT_W         92    // right column width
 
 typedef enum { VIEW_BIKES = 0, VIEW_DOCKS = 1, VIEW_MAP = 2 } ViewMode;
 
@@ -117,21 +117,31 @@ static void circle_update_proc(Layer *layer, GContext *ctx) {
                      GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }
 
-// Draws nearby stations as dots.  Roads underneath, user dot on top.
+// Draws the map: dark BG, double-line roads, station dots, blue user dot.
 static void map_update_proc(Layer *layer, GContext *ctx) {
   if (s_view_mode != VIEW_MAP || !s_have_data) return;
 
   GRect bounds = layer_get_bounds(layer);
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
-
   int cx = bounds.size.w / 2;
   int cy = bounds.size.h / 2;
   int half = bounds.size.h / 2;
   if (half < 1) half = 1;
 
-  // Road lines — 2px wide for visibility, light grey on colour, white on B&W.
-  graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorLightGray, GColorWhite));
+  // Dark background (#1C1C1E Apple Maps dark — closest Pebble colour is Black).
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+
+  // Double-line roads: thick dark casing first, then thinner lighter surface.
+  // Pass 1 — casing (DarkGray, 5px)
+  graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorDarkGray));
+  graphics_context_set_stroke_width(ctx, 5);
+  for (int i = 0; i < s_road_count; i++) {
+    graphics_draw_line(ctx,
+      GPoint(s_road_segs[i].x1, s_road_segs[i].y1),
+      GPoint(s_road_segs[i].x2, s_road_segs[i].y2));
+  }
+  // Pass 2 — surface (LightGray, 2px)
+  graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorLightGray, GColorLightGray));
   graphics_context_set_stroke_width(ctx, 2);
   for (int i = 0; i < s_road_count; i++) {
     graphics_draw_line(ctx,
@@ -139,36 +149,35 @@ static void map_update_proc(Layer *layer, GContext *ctx) {
       GPoint(s_road_segs[i].x2, s_road_segs[i].y2));
   }
 
+  // Station dots: selected = white ring + dark centre; others = grey dot.
   for (int i = 0; i < s_map_count; i++) {
     int px = cx + (s_map_stations[i].dlon * half) / RADIUS_METERS;
     int py = cy - (s_map_stations[i].dlat * half) / RADIUS_METERS;
-    if (px < 5) px = 5;
-    if (px > bounds.size.w - 5) px = bounds.size.w - 5;
-    if (py < 5) py = 5;
-    if (py > bounds.size.h - 5) py = bounds.size.h - 5;
+    if (px < 4) px = 4;
+    if (px > bounds.size.w - 4) px = bounds.size.w - 4;
+    if (py < 4) py = 4;
+    if (py > bounds.size.h - 4) py = bounds.size.h - 4;
 
-    GColor c;
-    int r;
-    uint8_t col = s_map_stations[i].color;
-    if (col == 3) {
-      c = GColorWhite; r = 6;
+    GPoint pt = GPoint(px, py);
+    if (s_map_stations[i].color == 3) {
+      // Selected: white outer ring, black inner fill
+      graphics_context_set_fill_color(ctx, GColorWhite);
+      graphics_fill_circle(ctx, pt, 7);
+      graphics_context_set_fill_color(ctx, GColorBlack);
+      graphics_fill_circle(ctx, pt, 4);
     } else {
-#if defined(PBL_COLOR)
-      if (col == 0)      c = GColorRed;
-      else if (col == 1) c = GColorChromeYellow;
-      else               c = GColorIslamicGreen;
-#else
-      c = GColorWhite;
-#endif
-      r = 4;
+      // Idle: mid-grey dot
+      graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorLightGray));
+      graphics_fill_circle(ctx, pt, 4);
     }
-    graphics_context_set_fill_color(ctx, c);
-    graphics_fill_circle(ctx, GPoint(px, py), r);
   }
 
-  // User: always blue (or white on B&W), on top of everything else.
-  graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorVividCerulean, GColorWhite));
-  graphics_fill_circle(ctx, GPoint(cx, cy), 4);
+  // User dot: white ring + blue fill (Apple Maps GPS style).
+  GPoint user = GPoint(cx, cy);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_circle(ctx, user, 7);
+  graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorVividCerulean, GColorBlack));
+  graphics_fill_circle(ctx, user, 5);
 }
 
 static void update_view(void) {
@@ -177,8 +186,8 @@ static void update_view(void) {
   switch (s_view_mode) {
     case VIEW_DOCKS:
       text_layer_set_text(s_mode_layer, "DOCKS");
-      // Left circle: docks count.  Right: total bikes available.
-      snprintf(s_detail_text, sizeof(s_detail_text), "Bikes\n%d", s_bikes);
+      // Left circle: docks count.  Right: "Bikes" label + count.
+      snprintf(s_detail_text, sizeof(s_detail_text), "%d", s_bikes);
       text_layer_set_text(s_detail_layer, s_detail_text);
       text_layer_set_text(s_ebike_label_layer, "");
       text_layer_set_text(s_ebike_layer, "");
@@ -434,9 +443,9 @@ static void window_load(Window *window) {
 
   // ── Top bar ─────────────────────────────────────────────────────────────
   // "1/4" top-left, "BIKES/DOCKS/MAP" centered in same row.
-  s_index_layer = make_text_layer(root, GRect(4, 2, 44, 16),
+  s_index_layer = make_text_layer(root, GRect(4, 4, 54, 18),
                                   FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentLeft);
-  s_mode_layer  = make_text_layer(root, GRect(2, 2, w - 4, 16),
+  s_mode_layer  = make_text_layer(root, GRect(2, 4, w - 4, 18),
                                   FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentCenter);
 
   // ── Station name ─────────────────────────────────────────────────────────
@@ -448,7 +457,7 @@ static void window_load(Window *window) {
   // ── Weather / sweat banner ───────────────────────────────────────────────
   // Colour is set dynamically on receipt ('!' → red, '~' → yellow).
   s_weather_layer = make_text_layer(root,
-                                    GRect(2, ROW_WEATHER_Y, w - 4, 14),
+                                    GRect(2, ROW_WEATHER_Y, w - 4, 18),
                                     FONT_KEY_GOTHIC_14_BOLD,
                                     PBL_IF_COLOR_ELSE(GColorRed, GColorWhite),
                                     GTextAlignmentCenter);
@@ -461,33 +470,34 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_circle_layer, circle_update_proc);
   layer_add_child(root, s_circle_layer);
 
-  // Right column: eBike label + value (top), Std label + value (bottom).
-  // Splitting 72 px: top half ends at mid, bottom half starts at mid.
-  int mid = ROW_MAIN_Y + main_h / 2;               // 78 + 36 = 114
+  // Right column: each half is 52px.  Label = 14px strip at top, count fills rest.
+  // Top half y=100..152, bottom half y=152..204.
+  int mid = ROW_MAIN_Y + main_h / 2;               // 152
 
-  // eBike label (small grey) and count (large blue).
+  // eBike label at top of top-half; count centred in remaining 38px.
+  // GOTHIC_28_BOLD is ~28px tall → pad by 5px: rect y = ROW_MAIN_Y+14+5 = ROW_MAIN_Y+19.
   s_ebike_label_layer = make_text_layer(root,
-                                        GRect(RIGHT_X, ROW_MAIN_Y + 4, RIGHT_W, 16),
-                                        FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentLeft);
+                                        GRect(RIGHT_X, ROW_MAIN_Y, RIGHT_W, 16),
+                                        FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentCenter);
   s_ebike_layer = make_text_layer(root,
-                                  GRect(RIGHT_X, ROW_MAIN_Y + 20, RIGHT_W, 28),
+                                  GRect(RIGHT_X, ROW_MAIN_Y + 19, RIGHT_W, 30),
                                   FONT_KEY_GOTHIC_28_BOLD,
                                   PBL_IF_COLOR_ELSE(GColorVividCerulean, GColorWhite),
-                                  GTextAlignmentLeft);
+                                  GTextAlignmentCenter);
 
-  // Std label (small grey) and count (white).
+  // Std label at top of bottom-half; count centred in remaining 38px.
   s_std_label_layer = make_text_layer(root,
-                                      GRect(RIGHT_X, mid + 2, RIGHT_W, 16),
-                                      FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentLeft);
+                                      GRect(RIGHT_X, mid, RIGHT_W, 16),
+                                      FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentCenter);
   s_std_layer = make_text_layer(root,
-                                GRect(RIGHT_X, mid + 18, RIGHT_W, 28),
-                                FONT_KEY_GOTHIC_28_BOLD, GColorWhite, GTextAlignmentLeft);
+                                GRect(RIGHT_X, mid + 19, RIGHT_W, 30),
+                                FONT_KEY_GOTHIC_28_BOLD, GColorWhite, GTextAlignmentCenter);
 
-  // DOCKS view: bike count spans the whole right column.
+  // DOCKS view: "Bikes" label at top, large count below.
   s_detail_layer = make_text_layer(root,
-                                   GRect(RIGHT_X, ROW_MAIN_Y + 8, RIGHT_W, main_h - 8),
-                                   FONT_KEY_GOTHIC_18_BOLD, GColorWhite,
-                                   GTextAlignmentLeft);
+                                   GRect(RIGHT_X, ROW_MAIN_Y, RIGHT_W, main_h),
+                                   FONT_KEY_GOTHIC_28_BOLD, GColorWhite,
+                                   GTextAlignmentCenter);
 
   // ── Map overlay ───────────────────────────────────────────────────────────
   // Covers weather + main area; hidden in BIKES/DOCKS view.
@@ -498,7 +508,7 @@ static void window_load(Window *window) {
   layer_set_hidden(s_map_layer, true);              // shown only in VIEW_MAP
 
   // ── Footer ────────────────────────────────────────────────────────────────
-  s_footer_layer = make_text_layer(root, GRect(2, h - 18, w - 4, 16),
+  s_footer_layer = make_text_layer(root, GRect(2, h - 24, w - 4, 22),
                                    FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentCenter);
 
   text_layer_set_text(s_station_layer, "Locating...");
