@@ -201,22 +201,22 @@ function fetchRoads(lat, lon) {
                 var k = Math.min(j + stride, geom.length - 1);
                 var p1 = geom[j], p2 = geom[k];
 
-                // Convert lat/lon to pixel coords in the map layer (144x88, centre=user).
-                // Same scale as station dots: half=44px covers RADIUS_METERS=250m.
-                var rx1 = Math.round(72 + (p1.lon - lon) * 111111 * cosLat * 44 / 250);
-                var ry1 = Math.round(44 - (p1.lat - lat) * 111111 * 44 / 250);
-                var rx2 = Math.round(72 + (p2.lon - lon) * 111111 * cosLat * 44 / 250);
-                var ry2 = Math.round(44 - (p2.lat - lat) * 111111 * 44 / 250);
+                // Convert lat/lon to pixel coords in the map layer (200x124, centre=user).
+                // Emery: half=62px covers 150m display radius.
+                var rx1 = Math.round(100 + (p1.lon - lon) * 111111 * cosLat * 62 / 150);
+                var ry1 = Math.round(62  - (p1.lat - lat) * 111111 * 62 / 150);
+                var rx2 = Math.round(100 + (p2.lon - lon) * 111111 * cosLat * 62 / 150);
+                var ry2 = Math.round(62  - (p2.lat - lat) * 111111 * 62 / 150);
 
                 // Both endpoints off the same edge → clamping would produce a
                 // false line hugging the map border; skip the segment entirely.
-                if ((rx1 < 0 && rx2 < 0) || (rx1 > 143 && rx2 > 143) ||
-                    (ry1 < 0 && ry2 < 0) || (ry1 > 87  && ry2 > 87)) continue;
+                if ((rx1 < 0 && rx2 < 0) || (rx1 > 199 && rx2 > 199) ||
+                    (ry1 < 0 && ry2 < 0) || (ry1 > 123 && ry2 > 123)) continue;
 
-                var x1 = Math.max(0, Math.min(143, rx1));
-                var y1 = Math.max(0, Math.min(87,  ry1));
-                var x2 = Math.max(0, Math.min(143, rx2));
-                var y2 = Math.max(0, Math.min(87,  ry2));
+                var x1 = Math.max(0, Math.min(199, rx1));
+                var y1 = Math.max(0, Math.min(123, ry1));
+                var x2 = Math.max(0, Math.min(199, rx2));
+                var y2 = Math.max(0, Math.min(123, ry2));
 
                 if (x1 === x2 && y1 === y2) continue; // zero-length after clamp
                 segs.push(x1 + ',' + y1 + ',' + x2 + ',' + y2);

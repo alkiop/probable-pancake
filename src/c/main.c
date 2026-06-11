@@ -13,25 +13,25 @@
 #define KEY_WEATHER_ALERT  10011
 #define KEY_ROAD_DATA      10012
 
-#define RADIUS_METERS     250
+#define RADIUS_METERS     150
 #define MAP_MAX_STATIONS  8
 #define MAP_MAX_ROAD_SEGS 80
 
-// Layout constants (portrait 144×168 Pebble Time)
-// Row 1  y=0..16   : index + mode
-// Row 2  y=16..60  : station name (~2 lines GOTHIC_18_BOLD)
-// Row 3  y=60..74  : weather banner
-// Gap    y=74..78  : 4 px black
-// Main   y=78..150 : LEFT=circle  RIGHT=eBike/Std (BIKES) or bike count (DOCKS)
-// Footer y=150..168: hint / warning
-#define ROW_STATION_Y   16
-#define ROW_STATION_H   44
-#define ROW_WEATHER_Y   60
-#define ROW_MAIN_Y      78
-#define ROW_FOOTER_Y    150
-#define LEFT_W          74    // circle column width
-#define RIGHT_X         76    // right column x-start
-#define RIGHT_W         66    // right column width
+// Layout constants (portrait 200×228 Pebble Time 2 / emery)
+// Row 1  y=0..22   : index + mode
+// Row 2  y=22..80  : station name (~2 lines GOTHIC_18_BOLD)
+// Row 3  y=80..98  : weather banner
+// Gap    y=98..100 : 2 px black
+// Main   y=100..204: LEFT=circle  RIGHT=eBike/Std (BIKES) or bike count (DOCKS)
+// Footer y=204..228: hint / warning
+#define ROW_STATION_Y   22
+#define ROW_STATION_H   58
+#define ROW_WEATHER_Y   80
+#define ROW_MAIN_Y      100
+#define ROW_FOOTER_Y    204
+#define LEFT_W          102   // circle column width
+#define RIGHT_X         104   // right column x-start
+#define RIGHT_W         92    // right column width
 
 typedef enum { VIEW_BIKES = 0, VIEW_DOCKS = 1, VIEW_MAP = 2 } ViewMode;
 
@@ -434,9 +434,9 @@ static void window_load(Window *window) {
 
   // ── Top bar ─────────────────────────────────────────────────────────────
   // "1/4" top-left, "BIKES/DOCKS/MAP" centered in same row.
-  s_index_layer = make_text_layer(root, GRect(4, 2, 44, 16),
+  s_index_layer = make_text_layer(root, GRect(4, 4, 54, 18),
                                   FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentLeft);
-  s_mode_layer  = make_text_layer(root, GRect(2, 2, w - 4, 16),
+  s_mode_layer  = make_text_layer(root, GRect(2, 4, w - 4, 18),
                                   FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentCenter);
 
   // ── Station name ─────────────────────────────────────────────────────────
@@ -448,7 +448,7 @@ static void window_load(Window *window) {
   // ── Weather / sweat banner ───────────────────────────────────────────────
   // Colour is set dynamically on receipt ('!' → red, '~' → yellow).
   s_weather_layer = make_text_layer(root,
-                                    GRect(2, ROW_WEATHER_Y, w - 4, 14),
+                                    GRect(2, ROW_WEATHER_Y, w - 4, 18),
                                     FONT_KEY_GOTHIC_14_BOLD,
                                     PBL_IF_COLOR_ELSE(GColorRed, GColorWhite),
                                     GTextAlignmentCenter);
@@ -461,33 +461,33 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_circle_layer, circle_update_proc);
   layer_add_child(root, s_circle_layer);
 
-  // Right column: eBike label + value (top), Std label + value (bottom).
-  // Splitting 72 px: top half ends at mid, bottom half starts at mid.
-  int mid = ROW_MAIN_Y + main_h / 2;               // 78 + 36 = 114
+  // Right column: eBike label + value (top half), Std label + value (bottom half).
+  // Splitting 104 px: top half y=100..152, bottom half y=152..204.
+  int mid = ROW_MAIN_Y + main_h / 2;               // 100 + 52 = 152
 
   // eBike label (small grey) and count (large blue).
   s_ebike_label_layer = make_text_layer(root,
-                                        GRect(RIGHT_X, ROW_MAIN_Y + 4, RIGHT_W, 16),
-                                        FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentLeft);
+                                        GRect(RIGHT_X, ROW_MAIN_Y + 4, RIGHT_W, 18),
+                                        FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentCenter);
   s_ebike_layer = make_text_layer(root,
-                                  GRect(RIGHT_X, ROW_MAIN_Y + 20, RIGHT_W, 28),
+                                  GRect(RIGHT_X, ROW_MAIN_Y + 24, RIGHT_W, 26),
                                   FONT_KEY_GOTHIC_28_BOLD,
                                   PBL_IF_COLOR_ELSE(GColorVividCerulean, GColorWhite),
-                                  GTextAlignmentLeft);
+                                  GTextAlignmentCenter);
 
   // Std label (small grey) and count (white).
   s_std_label_layer = make_text_layer(root,
-                                      GRect(RIGHT_X, mid + 2, RIGHT_W, 16),
-                                      FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentLeft);
+                                      GRect(RIGHT_X, mid + 2, RIGHT_W, 18),
+                                      FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentCenter);
   s_std_layer = make_text_layer(root,
-                                GRect(RIGHT_X, mid + 18, RIGHT_W, 28),
-                                FONT_KEY_GOTHIC_28_BOLD, GColorWhite, GTextAlignmentLeft);
+                                GRect(RIGHT_X, mid + 22, RIGHT_W, 26),
+                                FONT_KEY_GOTHIC_28_BOLD, GColorWhite, GTextAlignmentCenter);
 
   // DOCKS view: bike count spans the whole right column.
   s_detail_layer = make_text_layer(root,
                                    GRect(RIGHT_X, ROW_MAIN_Y + 8, RIGHT_W, main_h - 8),
                                    FONT_KEY_GOTHIC_18_BOLD, GColorWhite,
-                                   GTextAlignmentLeft);
+                                   GTextAlignmentCenter);
 
   // ── Map overlay ───────────────────────────────────────────────────────────
   // Covers weather + main area; hidden in BIKES/DOCKS view.
@@ -498,7 +498,7 @@ static void window_load(Window *window) {
   layer_set_hidden(s_map_layer, true);              // shown only in VIEW_MAP
 
   // ── Footer ────────────────────────────────────────────────────────────────
-  s_footer_layer = make_text_layer(root, GRect(2, h - 18, w - 4, 16),
+  s_footer_layer = make_text_layer(root, GRect(2, h - 24, w - 4, 22),
                                    FONT_KEY_GOTHIC_14_BOLD, grey, GTextAlignmentCenter);
 
   text_layer_set_text(s_station_layer, "Locating...");
