@@ -329,12 +329,19 @@ static void inbox_received_callback(DictionaryIterator *iter, void *context) {
 
   Tuple *weather_t = dict_find(iter, KEY_WEATHER_ALERT);
   if (weather_t && weather_t->type == TUPLE_CSTRING) {
-    if (weather_t->value->cstring[0]) {
-      strncpy(s_weather_text, weather_t->value->cstring, sizeof(s_weather_text) - 1);
+    const char *alert = weather_t->value->cstring;
+    if (!alert[0]) {
+      text_layer_set_text(s_weather_layer, "");
+    } else {
+      // '!' prefix = severe (red), '~' prefix = caution / sweat (yellow).
+      // The text after the 2-char sigil+space is what gets displayed.
+      GColor color = PBL_IF_COLOR_ELSE(
+        (alert[0] == '~') ? GColorChromeYellow : GColorRed,
+        GColorWhite);
+      text_layer_set_text_color(s_weather_layer, color);
+      strncpy(s_weather_text, alert + 2, sizeof(s_weather_text) - 1);
       s_weather_text[sizeof(s_weather_text) - 1] = '\0';
       text_layer_set_text(s_weather_layer, s_weather_text);
-    } else {
-      text_layer_set_text(s_weather_layer, "");
     }
   }
 

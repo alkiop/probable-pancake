@@ -154,9 +154,12 @@ function buildMapData() {
     return parts.join(';');
 }
 
-// Maps an Open-Meteo WMO weather code + temperature to a short alert banner.
-// Empty string means "no adverse conditions".
-function weatherAlert(code, tempC) {
+// Maps an Open-Meteo WMO weather code + temperatures to a short alert banner.
+// Prefix '!' = red (severe), '~' = yellow (caution).  Empty = no alert.
+// Two sweat triggers (both tuned for easy sweaters vs. the standard 32°C mark):
+//   - apparent temperature ≥ 27°C  (hot or scorching day)
+//   - actual ≥ 24°C AND humidity ≥ 70%  (warm + muggy; catches the 24°C / high-RH case)
+function weatherAlert(code, tempC, feelsLikeC, humidity) {
     if (code >= 95) return '! Storm';
     if (code >= 85) return '! Snow Showers';
     if (code >= 80) return '! Rain Showers';
@@ -166,6 +169,7 @@ function weatherAlert(code, tempC) {
     if (code >= 45 && code <= 48) return '! Fog';
     if (tempC > 35) return '! Heat Advisory';
     if (tempC < -10) return '! Cold Alert';
+    if (feelsLikeC >= 27 || (tempC >= 24 && humidity >= 70)) return '~ High Sweat';
     return '';
 }
 
@@ -226,12 +230,15 @@ function fetchRoads(lat, lon) {
 }
 
 function fetchWeather(lat, lon) {
+    // Use current= (not legacy current_weather=) to get apparent_temperature and humidity.
     var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat +
-        '&longitude=' + lon + '&current_weather=true';
+        '&longitude=' + lon +
+        '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code';
     fetchJSON(url, function(err, data) {
-        if (err || !data || !data.current_weather) return;
-        var cw = data.current_weather;
-        var alert = weatherAlert(cw.weathercode, cw.temperature);
+        if (err || !data || !data.current) return;
+        var c = data.current;
+        var alert = weatherAlert(c.weather_code, c.temperature_2m,
+                                 c.apparent_temperature, c.relative_humidity_2m);
         sendToWatch({ WeatherAlert: alert });
     });
 }
