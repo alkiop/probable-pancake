@@ -25,10 +25,10 @@
 // Main   y=100..204: LEFT=circle  RIGHT=eBike/Std (BIKES) or bike count (DOCKS)
 // Footer y=204..228: hint / warning
 #define ROW_STATION_Y   22
-#define ROW_STATION_H   58
-#define ROW_WEATHER_Y   80
-#define ROW_MAIN_Y      100
-#define ROW_FOOTER_Y    204
+#define ROW_STATION_H   44
+#define ROW_WEATHER_Y   66
+#define ROW_MAIN_Y      84
+#define ROW_FOOTER_Y    208
 #define LEFT_W          102   // circle column width
 #define RIGHT_X         104   // right column x-start
 #define RIGHT_W         92    // right column width
