@@ -11,9 +11,11 @@
 #define KEY_WARNING_MSG    10009
 #define KEY_MAP_DATA       10010
 #define KEY_WEATHER_ALERT  10011
+#define KEY_ROAD_DATA      10012
 
 #define RADIUS_METERS    250
 #define MAP_MAX_STATIONS 8
+#define MAP_MAX_ROAD_SEGS 80
 
 typedef enum { VIEW_BIKES = 0, VIEW_DOCKS = 1, VIEW_MAP = 2 } ViewMode;
 
@@ -50,8 +52,12 @@ static ViewMode s_view_mode = VIEW_BIKES;
 static bool s_have_data = false;
 static bool s_has_warning = false;
 
+typedef struct { uint8_t x1, y1, x2, y2; } RoadSeg;
+
 static MapStation s_map_stations[MAP_MAX_STATIONS];
 static int s_map_count = 0;
+static RoadSeg s_road_segs[MAP_MAX_ROAD_SEGS];
+static int s_road_count = 0;
 
 // Availability color rules: 0 = red, <5 = yellow, >=5 = green.
 // On B&W watches the circle is solid white with a black number.
@@ -105,6 +111,14 @@ static void map_update_proc(Layer *layer, GContext *ctx) {
   int cy = bounds.size.h / 2;
   int half = bounds.size.h / 2;
   if (half < 1) half = 1;
+
+  // Draw road lines first (underneath station dots)
+  graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
+  for (int i = 0; i < s_road_count; i++) {
+    graphics_draw_line(ctx,
+      GPoint(s_road_segs[i].x1, s_road_segs[i].y1),
+      GPoint(s_road_segs[i].x2, s_road_segs[i].y2));
+  }
 
   for (int i = 0; i < s_map_count; i++) {
     // Map ±RADIUS_METERS onto half the layer height; east = +x, north = -y.
@@ -222,6 +236,41 @@ static void parse_map_data(const char *data) {
   }
 }
 
+// Parses "x1,y1,x2,y2;..." pixel-space road segments into s_road_segs[].
+static void parse_road_data(const char *data) {
+  s_road_count = 0;
+  char buf[1500];
+  strncpy(buf, data, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = '\0';
+
+  char *rec = buf;
+  while (rec && *rec && s_road_count < MAP_MAX_ROAD_SEGS) {
+    char *next = strchr(rec, ';');
+    if (next) *next = '\0';
+
+    char *c1 = strchr(rec, ',');
+    if (c1) {
+      *c1 = '\0';
+      char *c2 = strchr(c1 + 1, ',');
+      if (c2) {
+        *c2 = '\0';
+        char *c3 = strchr(c2 + 1, ',');
+        if (c3) {
+          *c3 = '\0';
+          s_road_segs[s_road_count].x1 = (uint8_t)atoi(rec);
+          s_road_segs[s_road_count].y1 = (uint8_t)atoi(c1 + 1);
+          s_road_segs[s_road_count].x2 = (uint8_t)atoi(c2 + 1);
+          s_road_segs[s_road_count].y2 = (uint8_t)atoi(c3 + 1);
+          s_road_count++;
+        }
+      }
+    }
+
+    if (!next) break;
+    rec = next + 1;
+  }
+}
+
 static void inbox_received_callback(DictionaryIterator *iter, void *context) {
   Tuple *error_t = dict_find(iter, KEY_ERROR_CODE);
   if (error_t && error_t->value->int32 != 0) {
@@ -267,6 +316,12 @@ static void inbox_received_callback(DictionaryIterator *iter, void *context) {
   Tuple *map_t = dict_find(iter, KEY_MAP_DATA);
   if (map_t && map_t->type == TUPLE_CSTRING) {
     parse_map_data(map_t->value->cstring);
+    layer_mark_dirty(s_map_layer);
+  }
+
+  Tuple *road_t = dict_find(iter, KEY_ROAD_DATA);
+  if (road_t && road_t->type == TUPLE_CSTRING) {
+    parse_road_data(road_t->value->cstring);
     layer_mark_dirty(s_map_layer);
   }
 
@@ -426,8 +481,8 @@ static void init(void) {
   window_stack_push(s_main_window, true);
 
   app_message_register_inbox_received(inbox_received_callback);
-  // Inbox must hold the station bundle + embedded map payload (~230B worst case).
-  app_message_open(512, 32);
+  // Inbox sized for the road data message (~1200B worst case, 80 segments).
+  app_message_open(2048, 64);
 
   send_key(KEY_USE_NEAREST);
 }

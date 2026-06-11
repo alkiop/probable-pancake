@@ -149,6 +149,57 @@ function weatherAlert(code, tempC) {
     return '';
 }
 
+// Fetches nearby road geometry from Overpass (OpenStreetMap) and sends
+// line segments in pixel coordinates to the watch for the map overlay.
+// Each segment: "x1,y1,x2,y2" in the map layer's pixel space (144x88).
+function fetchRoads(lat, lon) {
+    var cosLat = Math.cos(lat * Math.PI / 180);
+    var query = '[out:json][timeout:8];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|service)$"](around:300,' +
+        lat.toFixed(6) + ',' + lon.toFixed(6) + '););out geom;';
+    var url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+
+    fetchJSON(url, function(err, data) {
+        if (err || !data || !data.elements || data.elements.length === 0) return;
+
+        var segs = [];
+        var maxTotal = 80;
+        var els = data.elements;
+
+        for (var i = 0; i < els.length && segs.length < maxTotal; i++) {
+            var geom = els[i].geometry;
+            if (!geom || geom.length < 2) continue;
+
+            // Limit each way to 8 segments; stride-sample if longer.
+            var maxPerWay = Math.min(8, geom.length - 1);
+            var stride = Math.max(1, Math.floor((geom.length - 1) / maxPerWay));
+
+            for (var j = 0; j + 1 < geom.length && segs.length < maxTotal; j += stride) {
+                var k = Math.min(j + stride, geom.length - 1);
+                var p1 = geom[j], p2 = geom[k];
+
+                // Convert lat/lon to pixel coords in the map layer (144x88, centre=user).
+                // Same scale as station dots: half=44px covers RADIUS_METERS=250m.
+                var x1 = Math.round(72 + (p1.lon - lon) * 111111 * cosLat * 44 / 250);
+                var y1 = Math.round(44 - (p1.lat - lat) * 111111 * 44 / 250);
+                var x2 = Math.round(72 + (p2.lon - lon) * 111111 * cosLat * 44 / 250);
+                var y2 = Math.round(44 - (p2.lat - lat) * 111111 * 44 / 250);
+
+                x1 = Math.max(0, Math.min(143, x1));
+                y1 = Math.max(0, Math.min(87, y1));
+                x2 = Math.max(0, Math.min(143, x2));
+                y2 = Math.max(0, Math.min(87, y2));
+
+                if (x1 === x2 && y1 === y2) continue; // zero-length after clamp
+                segs.push(x1 + ',' + y1 + ',' + x2 + ',' + y2);
+            }
+        }
+
+        if (segs.length > 0) {
+            sendToWatch({ RoadData: segs.join(';') });
+        }
+    });
+}
+
 function fetchWeather(lat, lon) {
     var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat +
         '&longitude=' + lon + '&current_weather=true';
@@ -168,6 +219,7 @@ function locateAndSend() {
             buildNearbyList(userLat, userLon);
             sendCurrentStation();
             fetchWeather(userLat, userLon);
+            fetchRoads(userLat, userLon);
         },
         function(err) {
             console.log('[citibike] geolocation failed: ' + (err && err.message));
