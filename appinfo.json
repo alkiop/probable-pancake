@@ -27,7 +27,8 @@
         "StationCount": 10008,
         "WarningMsg": 10009,
         "MapData": 10010,
-        "WeatherAlert": 10011
+        "WeatherAlert": 10011,
+        "RoadData": 10012
     },
     "resources": {
         "media": []
@@ -47,6 +48,7 @@
         "StationCount": 10008,
         "WarningMsg": 10009,
         "MapData": 10010,
-        "WeatherAlert": 10011
+        "WeatherAlert": 10011,
+        "RoadData": 10012
     }
 }
