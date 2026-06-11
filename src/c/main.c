@@ -101,7 +101,7 @@ static void circle_update_proc(Layer *layer, GContext *ctx) {
 
 // Plots nearby stations as dots around the user (centre = user position).
 static void map_update_proc(Layer *layer, GContext *ctx) {
-  if (s_view_mode != VIEW_MAP) return;
+  if (s_view_mode != VIEW_MAP || !s_have_data) return;
 
   GRect bounds = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorBlack);
@@ -189,12 +189,14 @@ static void update_view(void) {
     text_layer_set_text(s_footer_layer, hint);
   }
 
+  layer_set_hidden(s_map_layer, s_view_mode != VIEW_MAP);
   layer_mark_dirty(s_circle_layer);
   layer_mark_dirty(s_map_layer);
 }
 
 static void show_error(const char *msg) {
   s_have_data = false;
+  layer_set_hidden(s_map_layer, true);
   layer_mark_dirty(s_circle_layer);
   layer_mark_dirty(s_map_layer);
   text_layer_set_text(s_mode_layer, "");
@@ -327,12 +329,19 @@ static void inbox_received_callback(DictionaryIterator *iter, void *context) {
 
   Tuple *weather_t = dict_find(iter, KEY_WEATHER_ALERT);
   if (weather_t && weather_t->type == TUPLE_CSTRING) {
-    if (weather_t->value->cstring[0]) {
-      strncpy(s_weather_text, weather_t->value->cstring, sizeof(s_weather_text) - 1);
+    const char *alert = weather_t->value->cstring;
+    if (!alert[0]) {
+      text_layer_set_text(s_weather_layer, "");
+    } else {
+      // '!' prefix = severe (red), '~' prefix = caution / sweat (yellow).
+      // The text after the 2-char sigil+space is what gets displayed.
+      GColor color = PBL_IF_COLOR_ELSE(
+        (alert[0] == '~') ? GColorChromeYellow : GColorRed,
+        GColorWhite);
+      text_layer_set_text_color(s_weather_layer, color);
+      strncpy(s_weather_text, alert + 2, sizeof(s_weather_text) - 1);
       s_weather_text[sizeof(s_weather_text) - 1] = '\0';
       text_layer_set_text(s_weather_layer, s_weather_text);
-    } else {
-      text_layer_set_text(s_weather_layer, "");
     }
   }
 

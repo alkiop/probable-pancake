@@ -39,10 +39,28 @@ function fetchJSON(url, cb) {
     xhr.send();
 }
 
-function sendToWatch(msg) {
+// Serialised message queue: Pebble drops sendAppMessage calls made while a
+// previous one is in-flight.  Without this, road or weather data is silently
+// lost whenever two async fetches resolve close together.
+var _msgQueue = [];
+var _msgPending = false;
+
+function _drainQueue() {
+    if (_msgPending || _msgQueue.length === 0) return;
+    _msgPending = true;
+    var msg = _msgQueue.shift();
     Pebble.sendAppMessage(msg,
-        function() {},
-        function(e) { console.log('[citibike] send failed: ' + JSON.stringify(e)); });
+        function() { _msgPending = false; _drainQueue(); },
+        function(e) {
+            console.log('[citibike] send failed: ' + JSON.stringify(e));
+            _msgPending = false;
+            _drainQueue();
+        });
+}
+
+function sendToWatch(msg) {
+    _msgQueue.push(msg);
+    _drainQueue();
 }
 
 function sendError(code) {
@@ -118,7 +136,9 @@ function sendCurrentStation() {
 // Returned as a string so it can ride inside the station message — AppMessage
 // only allows one in-flight message, so separate back-to-back sends get dropped.
 function buildMapData() {
-    if (userLat === null || nearbyList.length === 0) return '';
+    // Out-of-range: the only station is far outside the 250m map radius; don't
+    // show a misleading dot clamped to the map edge.
+    if (userLat === null || nearbyList.length === 0 || outOfRange) return '';
     var cosLat = Math.cos(userLat * Math.PI / 180);
     var parts = [];
     var limit = Math.min(nearbyList.length, 8);
@@ -134,9 +154,12 @@ function buildMapData() {
     return parts.join(';');
 }
 
-// Maps an Open-Meteo WMO weather code + temperature to a short alert banner.
-// Empty string means "no adverse conditions".
-function weatherAlert(code, tempC) {
+// Maps an Open-Meteo WMO weather code + temperatures to a short alert banner.
+// Prefix '!' = red (severe), '~' = yellow (caution).  Empty = no alert.
+// Two sweat triggers (both tuned for easy sweaters vs. the standard 32°C mark):
+//   - apparent temperature ≥ 27°C  (hot or scorching day)
+//   - actual ≥ 24°C AND humidity ≥ 70%  (warm + muggy; catches the 24°C / high-RH case)
+function weatherAlert(code, tempC, feelsLikeC, humidity) {
     if (code >= 95) return '! Storm';
     if (code >= 85) return '! Snow Showers';
     if (code >= 80) return '! Rain Showers';
@@ -146,6 +169,7 @@ function weatherAlert(code, tempC) {
     if (code >= 45 && code <= 48) return '! Fog';
     if (tempC > 35) return '! Heat Advisory';
     if (tempC < -10) return '! Cold Alert';
+    if (feelsLikeC >= 27 || (tempC >= 24 && humidity >= 70)) return '~ High Sweat';
     return '';
 }
 
@@ -179,15 +203,20 @@ function fetchRoads(lat, lon) {
 
                 // Convert lat/lon to pixel coords in the map layer (144x88, centre=user).
                 // Same scale as station dots: half=44px covers RADIUS_METERS=250m.
-                var x1 = Math.round(72 + (p1.lon - lon) * 111111 * cosLat * 44 / 250);
-                var y1 = Math.round(44 - (p1.lat - lat) * 111111 * 44 / 250);
-                var x2 = Math.round(72 + (p2.lon - lon) * 111111 * cosLat * 44 / 250);
-                var y2 = Math.round(44 - (p2.lat - lat) * 111111 * 44 / 250);
+                var rx1 = Math.round(72 + (p1.lon - lon) * 111111 * cosLat * 44 / 250);
+                var ry1 = Math.round(44 - (p1.lat - lat) * 111111 * 44 / 250);
+                var rx2 = Math.round(72 + (p2.lon - lon) * 111111 * cosLat * 44 / 250);
+                var ry2 = Math.round(44 - (p2.lat - lat) * 111111 * 44 / 250);
 
-                x1 = Math.max(0, Math.min(143, x1));
-                y1 = Math.max(0, Math.min(87, y1));
-                x2 = Math.max(0, Math.min(143, x2));
-                y2 = Math.max(0, Math.min(87, y2));
+                // Both endpoints off the same edge → clamping would produce a
+                // false line hugging the map border; skip the segment entirely.
+                if ((rx1 < 0 && rx2 < 0) || (rx1 > 143 && rx2 > 143) ||
+                    (ry1 < 0 && ry2 < 0) || (ry1 > 87  && ry2 > 87)) continue;
+
+                var x1 = Math.max(0, Math.min(143, rx1));
+                var y1 = Math.max(0, Math.min(87,  ry1));
+                var x2 = Math.max(0, Math.min(143, rx2));
+                var y2 = Math.max(0, Math.min(87,  ry2));
 
                 if (x1 === x2 && y1 === y2) continue; // zero-length after clamp
                 segs.push(x1 + ',' + y1 + ',' + x2 + ',' + y2);
@@ -201,12 +230,15 @@ function fetchRoads(lat, lon) {
 }
 
 function fetchWeather(lat, lon) {
+    // Use current= (not legacy current_weather=) to get apparent_temperature and humidity.
     var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat +
-        '&longitude=' + lon + '&current_weather=true';
+        '&longitude=' + lon +
+        '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code';
     fetchJSON(url, function(err, data) {
-        if (err || !data || !data.current_weather) return;
-        var cw = data.current_weather;
-        var alert = weatherAlert(cw.weathercode, cw.temperature);
+        if (err || !data || !data.current) return;
+        var c = data.current;
+        var alert = weatherAlert(c.weather_code, c.temperature_2m,
+                                 c.apparent_temperature, c.relative_humidity_2m);
         sendToWatch({ WeatherAlert: alert });
     });
 }
